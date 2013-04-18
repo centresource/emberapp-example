@@ -1,0 +1,100 @@
+#!/usr/bin/env ruby
+
+require 'sprockets'
+require 'handlebars_assets'
+require 'optparse'
+require 'shellwords'
+require 'pry'
+
+HandlebarsAssets::Config.template_namespace = 'Ember.TEMPLATES'
+unless ARGV.delete("--noenv")
+  if File.exist?(path = "./.sprocketsrc")
+    rcflags = Shellwords.split(File.read(path))
+    ARGV.unshift(*rcflags)
+  end
+end
+
+filenames = []
+environment = Sprockets::Environment.new(Dir.pwd)
+odir = "assets"
+
+(ENV['SPROCKETS_PATH'] || "").split(File::PATH_SEPARATOR).each do |path|
+  environment.append_path path
+end
+
+environment.append_path "src/coffee"
+environment.append_path "src/sass"
+environment.append_path "vendor"
+
+OptionParser.new do |opts|
+  opts.summary_width = 28
+  opts.banner = "Usage: build [options] filename [filename ...]"
+
+  def opts.show_usage
+    puts self
+    exit 1
+  end
+
+  opts.on("-r", "--require LIBRARY", "Require the LIBRARY before doing anything") do |lib|
+    require lib
+  end
+
+  opts.on("-I DIRECTORY", "--include=DIRECTORY", "Adds the directory to the Sprockets load path") do |directory|
+    environment.append_path directory
+  end
+
+  opts.on("-o DIRECTORY", "--output=DIRECTORY", "Copy provided assets into DIRECTORY") do |directory|
+    odir = directory.gsub(/\/$/, "")
+  end
+
+  opts.on("--css-compressor=COMPRESSOR", "Use CSS compressor") do |compressor|
+    environment.css_compressor = compressor.to_sym
+  end
+
+  opts.on("--js-compressor=COMPRESSOR", "Use JavaScript compressor") do |compressor|
+    environment.js_compressor = compressor.to_sym
+  end
+
+  opts.on("--noenv", "Disables .sprocketsrc file") do
+  end
+
+  opts.on_tail("-h", "--help", "Shows this help message") do
+    opts.show_usage
+  end
+
+  opts.on_tail("-v", "--version", "Shows version") do
+    puts Sprockets::VERSION
+    exit
+  end
+
+  opts.show_usage if ARGV.empty?
+
+  begin
+    opts.order(ARGV) do |filename|
+      filenames << File.expand_path(filename)
+    end
+  rescue OptionParser::ParseError => e
+    opts.warn e.message
+    opts.show_usage
+  end
+end
+
+if environment.paths.empty?
+  warn "No load paths given"
+  warn "Usage: sprockets -Ijavascripts/ filename"
+  exit 1
+end
+
+if filenames.length > 0
+  filenames.each do |filename|
+    puts "FILE: #{filename}"
+    begin
+      environment[filename].write_to odir + "/" + environment[filename].logical_path
+    rescue
+      puts "ERROR ON: #{filename}"
+    end
+  end
+else
+  warn "Must provide files to compile"
+  exit 1
+end
